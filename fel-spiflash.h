@@ -30,5 +30,6 @@ void aw_fel_spiflash_write(feldev_handle *dev,
 void aw_fel_spiflash_info(feldev_handle *dev);
 void aw_fel_spiflash_help(void);
 void aw_fel_spi0_init(feldev_handle *dev);
+void aw_fel_spinand_info(feldev_handle *dev);
 
 #endif
