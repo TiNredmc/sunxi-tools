@@ -49,6 +49,10 @@ spi_flash_info_t spi_flash_info[] = {
 	  .small_erase_cmd = 0x20, .small_erase_size =  4 * 1024,
 	  .program_cmd = 0x02, .program_size = 256,
 	  .text_description = "Macronix MX25Lxxxx" },
+	{ .id = 0xEFAA, .write_enable_cmd = 0x06,
+	  .large_erase_cmd = 0xD8, .large_erase_size = 64 * 2048,
+	  .program_cmd = 0x02, .program_size = 512,
+	  .text_description = "Winbond W25Nxx" },
 };
 
 spi_flash_info_t default_spi_flash_info = {
@@ -495,6 +499,43 @@ void aw_fel_spiflash_info(feldev_handle *dev)
 
 	printf("Manufacturer: %s (%02Xh), model: %02Xh, size: %d bytes.\n",
 	       manufacturer, buf[3], buf[4], (1 << buf[5]));
+}
+
+/*
+ * Use the read JEDEC ID (9Fh) from SPI NAND.
+ */
+void aw_fel_spinand_info(feldev_handle *dev)
+{
+	soc_info_t *soc_info = dev->soc_info;
+	const char *manufacturer;
+	unsigned char buf[] = {0x9F, 0, 0, 0, 0, 0x0, 0x0 };
+	void *backup = backup_sram(dev);
+
+	spi0_init(dev);
+	aw_fel_write(dev, buf, soc_info->spl_addr, sizeof(buf));
+	prepare_spi_batch_data_transfer(dev, soc_info->spl_addr);
+	aw_fel_remotefunc_execute(dev, NULL);
+	aw_fel_read(dev, soc_info->spl_addr, buf, sizeof(buf));
+
+	restore_sram(dev, backup);
+
+	/* Assume that the MISO pin is either pulled up or down */
+	if (buf[4] == 0x00 || buf[4] == 0xFF) {
+		printf("No SPI flash detected.\n");
+		return;
+	}
+
+	switch (buf[2]) {
+	case 0xEF:
+		manufacturer = "Winbond";
+		break;
+	default:
+		manufacturer = "Unknown";
+		break;
+	}
+
+	printf("Manufacturer: %s (%02Xh), model: %02Xh, size: %d bytes.\n",
+	       manufacturer, buf[2], buf[3], (1 << buf[5]));
 }
 
 /*
