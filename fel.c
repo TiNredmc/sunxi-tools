@@ -1358,7 +1358,9 @@ int main(int argc, char **argv)
 			skip=2;
 		} else if (strcmp(argv[1], "spiflash-info") == 0) {
 			aw_fel_spiflash_info(handle);
-		} else if (strcmp(argv[1], "spiflash-read") == 0 && argc > 4) {
+		} else if (strcmp(argv[1], "spinand-info") == 0) {
+			aw_fel_spinand_info(handle);
+		}else if (strcmp(argv[1], "spiflash-read") == 0 && argc > 4) {
 			size_t size = strtoul(argv[3], NULL, 0);
 			void *buf = malloc(size);
 			aw_fel_spiflash_read(handle, strtoul(argv[2], NULL, 0), buf, size,
@@ -1370,6 +1372,13 @@ int main(int argc, char **argv)
 			size_t size;
 			void *buf = load_file(argv[3], &size);
 			aw_fel_spiflash_write(handle, strtoul(argv[2], NULL, 0), buf, size,
+					      pflag_active ? progress_bar : NULL);
+			free(buf);
+			skip=3;
+		} else if (strcmp(argv[1], "spinand-write") == 0 && argc > 3) {
+			size_t size;
+			void *buf = load_file(argv[3], &size);
+			aw_fel_spinand_write(handle, strtoul(argv[2], NULL, 0), buf, size,
 					      pflag_active ? progress_bar : NULL);
 			free(buf);
 			skip=3;
