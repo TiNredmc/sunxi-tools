@@ -539,7 +539,7 @@ void aw_fel_spinand_info(feldev_handle *dev)
 {
 	soc_info_t *soc_info = dev->soc_info;
 	const char *manufacturer;
-	unsigned char buf[] = {0x9F, 0, 0, 0, 0, 0x0, 0x0 };
+	unsigned char buf[] = {0, 5, 0x9F, 0, 0, 0, 0, 0x0, 0x0 };
 	void *backup = backup_sram(dev);
 
 	spi0_init(dev);
@@ -551,12 +551,12 @@ void aw_fel_spinand_info(feldev_handle *dev)
 	restore_sram(dev, backup);
 
 	/* Assume that the MISO pin is either pulled up or down */
-	if (buf[4] == 0x00 || buf[4] == 0xFF) {
+	if (buf[5] == 0x00 || buf[5] == 0xFF) {
 		printf("No SPI flash detected.\n");
 		return;
 	}
 
-	switch (buf[2]) {
+	switch (buf[4]) {// other SPI nand manufacturer can be added later here
 	case 0xEF:
 		manufacturer = "Winbond";
 		break;
@@ -565,8 +565,8 @@ void aw_fel_spinand_info(feldev_handle *dev)
 		break;
 	}
 
-	printf("Manufacturer: %s (%02Xh), model: %02Xh, size: %d bytes.\n",
-	       manufacturer, buf[2], buf[3], (1 << buf[5]));
+	printf("Manufacturer: %s (%02Xh), model: %02Xh, sub-model: %02Xh.\n",
+	       manufacturer, buf[4], buf[5], buf[6]);
 }
 
 /*
