@@ -461,6 +461,37 @@ void aw_fel_spiflash_write(feldev_handle *dev,
 	restore_sram(dev, backup);
 }
 
+void aw_fel_spinand_write(feldev_handle *dev,
+			   uint32_t offset, void *buf, size_t len,
+			   progress_cb_t progress)
+{
+	void *backup = backup_sram(dev);
+	uint8_t *buf8 = (uint8_t *)buf;
+
+	spi_flash_info_t *flash_info = &default_spi_flash_info; /* FIXME */
+
+	spi0_init(dev);
+
+	progress_start(progress, len);
+	while (len > 0) {
+		size_t write_count;
+			write_count = flash_info->large_erase_size;
+			if (write_count > len)
+				write_count = len;
+			aw_fel_spiflash_write_helper(dev, offset, buf8,
+				write_count,
+				flash_info->large_erase_size, flash_info->large_erase_cmd,
+				flash_info->program_size, flash_info->program_cmd);
+
+		len    -= write_count;
+		offset += write_count;
+		buf8   += write_count;
+		progress_update(write_count);
+	}
+
+	restore_sram(dev, backup);
+}
+
 /*
  * Use the read JEDEC ID (9Fh) command.
  */
@@ -545,5 +576,7 @@ void aw_fel_spiflash_help(void)
 {
 	printf("	spiflash-info			Retrieves basic information\n"
 	       "	spiflash-read addr length file	Write SPI flash contents into file\n"
-	       "	spiflash-write addr file	Store file contents into SPI flash\n");
+	       "	spiflash-write addr file	Store file contents into SPI flash\n"
+	       "	spinand-info			Retrieves basic information from SPI NAND\n"
+	       "	spinand-write addr file	Store file contents into SPI flash\n");
 }
