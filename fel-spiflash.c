@@ -51,7 +51,7 @@ spi_flash_info_t spi_flash_info[] = {
 	  .text_description = "Macronix MX25Lxxxx" },
 	{ .id = 0xEFAA, .write_enable_cmd = 0x06,
 	  .large_erase_cmd = 0xD8, .large_erase_size = 64 * 2048,
-	  .program_cmd = 0x02, .program_size = 512,
+	  .program_cmd = 0x02, .program_size = 1024,
 	  .text_description = "Winbond W25Nxx" },
 };
 
