@@ -51,7 +51,7 @@ spi_flash_info_t spi_flash_info[] = {
 	  .text_description = "Macronix MX25Lxxxx" },
 	{ .id = 0xEFAA, .write_enable_cmd = 0x06,
 	  .large_erase_cmd = 0xD8, .large_erase_size = 64 * 2048,
-	  .program_cmd = 0x02, .program_size = 1024,
+	  .program_cmd = 0x02, .program_size = 2048,
 	  .text_description = "Winbond W25Nxx" },
 };
 
@@ -431,7 +431,6 @@ void aw_fel_spinand_write_helper(feldev_handle *dev,
 
 	while (len > 0) {
 		while (len > 0 && max_chunk_size - cmd_idx > program_size + 64) {
-
 			/* Emit write enable command */
 			cmdbuf[cmd_idx++] = 0;
 			cmdbuf[cmd_idx++] = 1;
