@@ -413,7 +413,7 @@ void aw_fel_spiflash_write_helper(feldev_handle *dev,
 }
 
 void aw_fel_spinand_write_helper(feldev_handle *dev,
-				  uint32_t offset, void *buf, size_t len,
+				  uint16_t offset, void *buf, size_t len,
 				  size_t erase_size, uint8_t erase_cmd,
 				  size_t program_size, uint8_t program_cmd)
 {
@@ -424,44 +424,62 @@ void aw_fel_spinand_write_helper(feldev_handle *dev,
 
 	if (max_chunk_size > 0x1000)
 		max_chunk_size = 0x1000;
+
 	uint8_t *cmdbuf = malloc(max_chunk_size);
 	cmd_idx = 0;
 
 	prepare_spi_batch_data_transfer(dev, soc_info->spl_addr);
 
-	while (len > 0) {
-		while (len > 0 && max_chunk_size - cmd_idx > program_size + 64) {
+	while (len > 0){
 			/* Emit write enable command */
 			cmdbuf[cmd_idx++] = 0;
 			cmdbuf[cmd_idx++] = 1;
 			cmdbuf[cmd_idx++] = CMD_WRITE_ENABLE;
-			/* Emit page program command */
-			size_t write_count = program_size;
-			if (write_count > len)
-				write_count = len;
-			cmdbuf[cmd_idx++] = (4 + write_count) >> 8;
-			cmdbuf[cmd_idx++] = 4 + write_count;
-			cmdbuf[cmd_idx++] = program_cmd;
-			cmdbuf[cmd_idx++] = offset >> 16;
+			cmdbuf[cmd_idx++] = 0;
+			cmdbuf[cmd_idx++] = 0;
+		prepare_spi_batch_data_transfer(dev, soc_info->spl_addr);
+		aw_fel_write(dev, cmdbuf, soc_info->spl_addr, 5);
+		aw_fel_remotefunc_execute(dev, NULL);
+			// Reset counter to 0 before sending new packet.
+			cmd_idx = 0;
+
+			/* Emit Load Program Data (into buffer on SPI NAND) */
+			size_t write_count = program_size;// Cap writing data size at 2048 Bytes
+			cmdbuf[cmd_idx++] = (6 + write_count) >> 8;
+			cmdbuf[cmd_idx++] = 6 + write_count;
+			cmdbuf[cmd_idx++] = program_cmd;// Write to the buffer 
+			cmdbuf[cmd_idx++] = 0; // offset on buffer column is 0
+			cmdbuf[cmd_idx++] = 0; // ''
+			cmdbuf[cmd_idx++] = 0; // ''
+			memcpy(cmdbuf + cmd_idx, buf8, write_count);// copy the data to the sending buffer (2048 bytes).
+			cmd_idx = cmd_idx + write_count;// move the counter 2048 bytes.
+			cmdbuf[cmd_idx++] = 0;
+			cmdbuf[cmd_idx++] = 0;
+		prepare_spi_batch_data_transfer(dev, soc_info->spl_addr);
+		aw_fel_write(dev, cmdbuf, soc_info->spl_addr, write_count + 6);
+		aw_fel_remotefunc_execute(dev, NULL);
+			// Reset counter to 0 before sending new packet.
+			cmd_idx = 0;
+
+			/* Emit program execute */
+			cmdbuf[cmd_idx++] = 0;
+			cmdbuf[cmd_idx++] = 4;
+			cmdbuf[cmd_idx++] = 0x10;// Program execute
+			cmdbuf[cmd_idx++] = 0;
 			cmdbuf[cmd_idx++] = offset >> 8;
 			cmdbuf[cmd_idx++] = offset;
-			memcpy(cmdbuf + cmd_idx, buf8, write_count);
-			cmd_idx += write_count;
+			cmdbuf[cmd_idx++] = 0;
+			cmdbuf[cmd_idx++] = 0;
+		prepare_spi_batch_data_transfer(dev, soc_info->spl_addr);
+		aw_fel_write(dev, cmdbuf, soc_info->spl_addr, 8);
+		aw_fel_remotefunc_execute(dev, NULL);
+			// Reset counter to 0 before sending new packet.
+			cmd_idx = 0;
+
+			//cmd_idx += write_count;
 			buf8    += write_count;
 			len     -= write_count;
-			offset  += write_count;
-			/* Emit wait for completion */
-			cmdbuf[cmd_idx++] = 0xFF;
-			cmdbuf[cmd_idx++] = 0xFF;
-		}
-		/* Emit the end marker */
-		cmdbuf[cmd_idx++] = 0;
-		cmdbuf[cmd_idx++] = 0;
-
-		/* Flush */
-		aw_fel_write(dev, cmdbuf, soc_info->spl_addr, cmd_idx);
-		aw_fel_remotefunc_execute(dev, NULL);
-		cmd_idx = 0;
+			offset++;
 	}
 
 	free(cmdbuf);
@@ -515,6 +533,7 @@ void aw_fel_spiflash_write(feldev_handle *dev,
 	restore_sram(dev, backup);
 }
 
+
 void aw_fel_spinand_write(feldev_handle *dev,
 			   uint32_t offset, void *buf, size_t len,
 			   progress_cb_t progress)
@@ -531,6 +550,23 @@ void aw_fel_spinand_write(feldev_handle *dev,
 
 	spi0_init(dev);
 
+
+	// check for page alignment
+	if(offset % flash_info->program_cmd){
+		printf("Offset is not page aligned : %x\n", offset);
+		printf("Auto aligned\n");
+	}
+	// Calculate the offset 
+	offset = offset / flash_info->program_cmd;// convert the absolute byte value to the page number
+
+	
+	if(offset > 0xFFFF){
+		printf("ERROR Offset is to too far : %x\n", offset);
+		printf("Maximum allowed is 0xFFFF\n");
+		restore_sram(dev, backup);
+		return;
+	}
+	
 	printf("Input data size is %lu\n", len0);
 	printf("Starting Block erase progress...\n");
 	
@@ -590,7 +626,7 @@ void aw_fel_spinand_write(feldev_handle *dev,
 		progress_update(write_count);
 	}
 
-	restore_sram(dev, backup);
+		restore_sram(dev, backup);
 }
 
 /*
