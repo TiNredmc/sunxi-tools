@@ -525,14 +525,14 @@ void aw_fel_spinand_write(feldev_handle *dev,
 	uint8_t *buf8 = (uint8_t *)buf;
 	size_t len0 = len;
 	uint16_t erase_cycle;
-	uint8_t op_buf[8]{0, 0, 0, 0, 0, 0, 0, 0};
-	uint32_t offset;
+	uint8_t op_buf[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+	uint32_t EraseOffset;
 
-	spi_flash_info_t *flash_info = &default_spi_flash_info; /* FIXME */
+	spi_flash_info_t *flash_info = &spi_flash_info[3]; /* FIXME */
 
 	spi0_init(dev);
 
-	printf("Input data size is %ul\n", len0);
+	printf("Input data size is %lu\n", len0);
 	printf("Starting Block erase progress...\n");
 	
 	// Count how many time that we want to BLOCK_ERASE (128K(iB) will be erased each time).
@@ -557,14 +557,14 @@ void aw_fel_spinand_write(feldev_handle *dev,
 	// Block Erase
 	while(erase_cycle--){
 		// Find the offset to start erasing.
-		offset = erase_cycle * flash_info->large_erase_size ;// Might adding (64 * offset) in case the address lands on ECC region.
+		EraseOffset = erase_cycle * flash_info->large_erase_size ;// Might adding (64 * offset) in case the address lands on ECC region.
 			/* Emit erase command */
 			op_buf[0] = 0;
 			op_buf[1] = 4;
-			op_buf[2] = erase_cmd;
-			op_buf[3] = offset >> 16;
-			op_buf[4] = offset >> 8;
-			op_buf[5] = offset;
+			op_buf[2] = flash_info->large_erase_cmd;
+			op_buf[3] = EraseOffset >> 16;
+			op_buf[4] = EraseOffset >> 8;
+			op_buf[5] = EraseOffset;
 			/* Emit wait for completion */
 			op_buf[6] = 0;
 			op_buf[7] = 0;
@@ -577,7 +577,7 @@ void aw_fel_spinand_write(feldev_handle *dev,
 	progress_start(progress, len);
 	while (len > 0) {
 		size_t write_count;
-			write_count = flash_info->large_erase_size;
+			write_count = flash_info->program_size;
 			if (write_count > len)
 				write_count = len;
 			aw_fel_spinand_write_helper(dev, offset, buf8,
