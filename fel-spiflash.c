@@ -412,13 +412,68 @@ void aw_fel_spiflash_write_helper(feldev_handle *dev,
 	free(cmdbuf);
 }
 
+void aw_fel_spinand_write_helper(feldev_handle *dev,
+				  uint32_t offset, void *buf, size_t len,
+				  size_t erase_size, uint8_t erase_cmd,
+				  size_t program_size, uint8_t program_cmd)
+{
+	soc_info_t *soc_info = dev->soc_info;
+	uint8_t *buf8 = (uint8_t *)buf;
+	size_t max_chunk_size = soc_info->scratch_addr - soc_info->spl_addr;
+	size_t cmd_idx;
+
+	if (max_chunk_size > 0x1000)
+		max_chunk_size = 0x1000;
+	uint8_t *cmdbuf = malloc(max_chunk_size);
+	cmd_idx = 0;
+
+	prepare_spi_batch_data_transfer(dev, soc_info->spl_addr);
+
+	while (len > 0) {
+		while (len > 0 && max_chunk_size - cmd_idx > program_size + 64) {
+
+			/* Emit write enable command */
+			cmdbuf[cmd_idx++] = 0;
+			cmdbuf[cmd_idx++] = 1;
+			cmdbuf[cmd_idx++] = CMD_WRITE_ENABLE;
+			/* Emit page program command */
+			size_t write_count = program_size;
+			if (write_count > len)
+				write_count = len;
+			cmdbuf[cmd_idx++] = (4 + write_count) >> 8;
+			cmdbuf[cmd_idx++] = 4 + write_count;
+			cmdbuf[cmd_idx++] = program_cmd;
+			cmdbuf[cmd_idx++] = offset >> 16;
+			cmdbuf[cmd_idx++] = offset >> 8;
+			cmdbuf[cmd_idx++] = offset;
+			memcpy(cmdbuf + cmd_idx, buf8, write_count);
+			cmd_idx += write_count;
+			buf8    += write_count;
+			len     -= write_count;
+			offset  += write_count;
+			/* Emit wait for completion */
+			cmdbuf[cmd_idx++] = 0xFF;
+			cmdbuf[cmd_idx++] = 0xFF;
+		}
+		/* Emit the end marker */
+		cmdbuf[cmd_idx++] = 0;
+		cmdbuf[cmd_idx++] = 0;
+
+		/* Flush */
+		aw_fel_write(dev, cmdbuf, soc_info->spl_addr, cmd_idx);
+		aw_fel_remotefunc_execute(dev, NULL);
+		cmd_idx = 0;
+	}
+
+	free(cmdbuf);
+}
+
 void aw_fel_spiflash_write(feldev_handle *dev,
 			   uint32_t offset, void *buf, size_t len,
 			   progress_cb_t progress)
 {
 	void *backup = backup_sram(dev);
 	uint8_t *buf8 = (uint8_t *)buf;
-
 	spi_flash_info_t *flash_info = &default_spi_flash_info; /* FIXME */
 
 	if ((offset % flash_info->small_erase_size) != 0) {
@@ -465,12 +520,59 @@ void aw_fel_spinand_write(feldev_handle *dev,
 			   uint32_t offset, void *buf, size_t len,
 			   progress_cb_t progress)
 {
+	soc_info_t *soc_info = dev->soc_info;
 	void *backup = backup_sram(dev);
 	uint8_t *buf8 = (uint8_t *)buf;
+	size_t len0 = len;
+	uint16_t erase_cycle;
+	uint8_t op_buf[8]{0, 0, 0, 0, 0, 0, 0, 0};
+	uint32_t offset;
 
 	spi_flash_info_t *flash_info = &default_spi_flash_info; /* FIXME */
 
 	spi0_init(dev);
+
+	printf("Input data size is %ul\n", len0);
+	printf("Starting Block erase progress...\n");
+	
+	// Count how many time that we want to BLOCK_ERASE (128K(iB) will be erased each time).
+	while(len0 >= flash_info->large_erase_size){
+		len0 = len0 - flash_info->large_erase_size;
+		erase_cycle++;
+	}
+	// If there is left over byte on next block, we also erase that block too.
+	if((len < flash_info->large_erase_size) && (len > 0))
+		erase_cycle++;
+
+	// Enable write before BLOCK ERASE.
+	op_buf[0] = 0;
+	op_buf[1] = 1;
+	op_buf[2] = CMD_WRITE_ENABLE;
+	op_buf[3] = 0;
+	op_buf[4] = 0;
+	prepare_spi_batch_data_transfer(dev, soc_info->spl_addr);
+	aw_fel_write(dev, op_buf, soc_info->spl_addr, 5);
+	aw_fel_remotefunc_execute(dev, NULL);
+
+	// Block Erase
+	while(erase_cycle--){
+		// Find the offset to start erasing.
+		offset = erase_cycle * flash_info->large_erase_size ;// Might adding (64 * offset) in case the address lands on ECC region.
+			/* Emit erase command */
+			op_buf[0] = 0;
+			op_buf[1] = 4;
+			op_buf[2] = erase_cmd;
+			op_buf[3] = offset >> 16;
+			op_buf[4] = offset >> 8;
+			op_buf[5] = offset;
+			/* Emit wait for completion */
+			op_buf[6] = 0;
+			op_buf[7] = 0;
+		prepare_spi_batch_data_transfer(dev, soc_info->spl_addr);
+		aw_fel_write(dev, op_buf, soc_info->spl_addr, 5);
+		aw_fel_remotefunc_execute(dev, NULL);
+	}
+
 
 	progress_start(progress, len);
 	while (len > 0) {
@@ -478,8 +580,8 @@ void aw_fel_spinand_write(feldev_handle *dev,
 			write_count = flash_info->large_erase_size;
 			if (write_count > len)
 				write_count = len;
-			aw_fel_spiflash_write_helper(dev, offset, buf8,
-				write_count,
+			aw_fel_spinand_write_helper(dev, offset, buf8,
+				write_count, 
 				flash_info->large_erase_size, flash_info->large_erase_cmd,
 				flash_info->program_size, flash_info->program_cmd);
 
